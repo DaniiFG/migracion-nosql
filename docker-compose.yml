@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # Contenedor 1: SQL Server con AdventureWorks
+  # ============================================
+  sqlserver:
+    build:
+      context: ./sqlserver
+      dockerfile: Dockerfile
+    container_name: sqlserver_adventureworks
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=AdventureWorks2024!
+      - MSSQL_PID=Express
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - migration_network
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "AdventureWorks2024!" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ============================================
+  # Contenedor 2: MongoDB (destino NoSQL)
+  # ============================================
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb_target
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=MongoAdmin2024!
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - migration_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet -u admin -p MongoAdmin2024! --authenticationDatabase admin
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Contenedor 3: Core (FastAPI + Pandas)
+  # ============================================
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: core_migration
+    ports:
+      - "8000:8000"
+    environment:
+      - SQL_SERVER_HOST=sqlserver
+      - SQL_SERVER_PORT=1433
+      - SQL_SERVER_USER=sa
+      - SQL_SERVER_PASSWORD=AdventureWorks2024!
+      - SQL_SERVER_DB=AdventureWorksLT
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_USER=admin
+      - MONGO_PASSWORD=MongoAdmin2024!
+      - MONGO_DB=adventureworks_nosql
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - migration_network
+
+volumes:
+  sqlserver_data:
+  mongodb_data:
+
+networks:
+  migration_network:
+    driver: bridge

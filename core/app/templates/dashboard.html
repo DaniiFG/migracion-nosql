@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migración SQL → MongoDB | Dashboard</title>
+    <meta name="description" content="Dashboard de migración de base de datos monolítica relacional a MongoDB distribuido">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="url(#grad1)"/>
+                        <path d="M8 12h6v8H8zM18 12h6v8h-6z" fill="white" opacity="0.9"/>
+                        <path d="M14 16h4" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                        <defs>
+                            <linearGradient id="grad1" x1="0" y1="0" x2="32" y2="32">
+                                <stop stop-color="#6366f1"/>
+                                <stop offset="1" stop-color="#8b5cf6"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Migración SQL → MongoDB</h1>
+                    <p class="subtitle">De Monolito Relacional a NoSQL Distribuido</p>
+                </div>
+            </div>
+            <div class="header-badges">
+                <span class="badge badge-sql" id="sqlStatus">SQL Server ⏳</span>
+                <span class="badge badge-mongo" id="mongoStatus">MongoDB ⏳</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs">
+        <button class="tab active" data-tab="overview" id="tab-overview">
+            <span class="tab-icon">📊</span> Resumen
+        </button>
+        <button class="tab" data-tab="sql" id="tab-sql">
+            <span class="tab-icon">🗄️</span> SQL Server
+        </button>
+        <button class="tab" data-tab="migration" id="tab-migration">
+            <span class="tab-icon">🔄</span> Migración
+        </button>
+        <button class="tab" data-tab="mongo" id="tab-mongo">
+            <span class="tab-icon">🍃</span> MongoDB
+        </button>
+        <button class="tab" data-tab="compare" id="tab-compare">
+            <span class="tab-icon">⚖️</span> Comparación
+        </button>
+    </nav>
+
+    <main class="main-content">
+        <!-- ==================== OVERVIEW TAB ==================== -->
+        <section class="tab-content active" id="content-overview">
+            <div class="section-header">
+                <h2>🏗️ Arquitectura del Proyecto</h2>
+                <p>Taller: De Monolito a MongoDB Distribuido</p>
+            </div>
+
+            <!-- Architecture Cards -->
+            <div class="arch-grid">
+                <div class="arch-card sql-card">
+                    <div class="arch-icon">🗄️</div>
+                    <h3>SQL Server</h3>
+                    <p class="arch-desc">Base de datos relacional (AdventureWorksLT)</p>
+                    <div class="arch-details">
+                        <span>Contenedor 1</span>
+                        <span>Puerto: 1433</span>
+                    </div>
+                    <div class="arch-tech">
+                        <span class="tech-badge">MSSQL 2022</span>
+                        <span class="tech-badge">Express</span>
+                    </div>
+                </div>
+
+                <div class="arch-card core-card">
+                    <div class="arch-icon">⚙️</div>
+                    <h3>Core (FastAPI)</h3>
+                    <p class="arch-desc">Motor de transformación con Pandas</p>
+                    <div class="arch-details">
+                        <span>Contenedor 2</span>
+                        <span>Puerto: 8000</span>
+                    </div>
+                    <div class="arch-tech">
+                        <span class="tech-badge">Python 3.11</span>
+                        <span class="tech-badge">FastAPI</span>
+                        <span class="tech-badge">Pandas</span>
+                    </div>
+                </div>
+
+                <div class="arch-card mongo-card">
+                    <div class="arch-icon">🍃</div>
+                    <h3>MongoDB</h3>
+                    <p class="arch-desc">Base de datos NoSQL (destino)</p>
+                    <div class="arch-details">
+                        <span>Contenedor 3</span>
+                        <span>Puerto: 27017</span>
+                    </div>
+                    <div class="arch-tech">
+                        <span class="tech-badge">MongoDB 7.0</span>
+                        <span class="tech-badge">NoSQL</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Migration Strategy -->
+            <div class="strategy-section">
+                <h3>📋 Estrategia de Migración (DDD)</h3>
+                <div class="strategy-grid">
+                    <div class="strategy-card">
+                        <h4>🔗 Embedding (Incrustación)</h4>
+                        <p>Datos relacionados 1:N se almacenan como subdocumentos dentro del documento padre. Elimina la necesidad de JOINs.</p>
+                        <code>Product → { category: {...}, model: {..., descriptions: [...]} }</code>
+                    </div>
+                    <div class="strategy-card">
+                        <h4>🔗 Referencing (Referencia)</h4>
+                        <p>IDs originales se mantienen como referencia para relaciones N:M o consultas independientes.</p>
+                        <code>Customer.addresses[] + addresses collection</code>
+                    </div>
+                    <div class="strategy-card">
+                        <h4>📋 Denormalization</h4>
+                        <p>Campos frecuentemente consultados se copian para evitar lookups adicionales.</p>
+                        <code>SalesOrder → { customer: { name: "..." } }</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Domain Mapping -->
+            <div id="mappingInfo" class="mapping-section"></div>
+        </section>
+
+        <!-- ==================== SQL SERVER TAB ==================== -->
+        <section class="tab-content" id="content-sql">
+            <div class="section-header">
+                <h2>🗄️ SQL Server - AdventureWorksLT</h2>
+                <p>Explorador de la base de datos relacional</p>
+            </div>
+
+            <div class="sql-explorer">
+                <!-- Table list -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Tablas</h3>
+                        <button class="btn btn-sm" onclick="loadSqlTables()" id="btn-refresh-sql">Actualizar</button>
+                    </div>
+                    <div id="sqlTableList" class="table-list">
+                        <div class="loading">Cargando tablas...</div>
+                    </div>
+                </div>
+
+                <!-- Table data -->
+                <div class="panel panel-wide">
+                    <div class="panel-header">
+                        <h3 id="sqlTableTitle">Selecciona una tabla</h3>
+                        <div class="panel-actions">
+                            <span id="sqlRowCount" class="row-count"></span>
+                        </div>
+                    </div>
+                    <div id="sqlTableData" class="data-view">
+                        <div class="placeholder">
+                            <span class="placeholder-icon">👈</span>
+                            <p>Selecciona una tabla de la lista para ver sus datos</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Query -->
+            <div class="query-section">
+                <h3>🔍 Consulta SQL Personalizada</h3>
+                <div class="query-input-group">
+                    <textarea id="sqlQueryInput" placeholder="SELECT * FROM SalesLT.Product WHERE ListPrice > 1000 ORDER BY ListPrice DESC" rows="3"></textarea>
+                    <button class="btn btn-primary" onclick="executeSqlQuery()" id="btn-exec-sql">Ejecutar</button>
+                </div>
+                <div id="sqlQueryResult" class="query-result"></div>
+            </div>
+        </section>
+
+        <!-- ==================== MIGRATION TAB ==================== -->
+        <section class="tab-content" id="content-migration">
+            <div class="section-header">
+                <h2>🔄 Motor de Migración</h2>
+                <p>Transformación de datos con Pandas: SQL Server → MongoDB</p>
+            </div>
+
+            <div class="migration-controls">
+                <button class="btn btn-primary btn-lg" onclick="executeMigration()" id="btn-migrate">
+                    🚀 Ejecutar Migración Completa
+                </button>
+                <button class="btn btn-danger btn-lg" onclick="resetMigration()" id="btn-reset">
+                    🗑️ Resetear MongoDB
+                </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="migration-progress" id="migrationProgress" style="display:none;">
+                <div class="progress-header">
+                    <h3 id="migrationStep">Iniciando...</h3>
+                    <span id="migrationPercent" class="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Steps Log -->
+            <div class="migration-log" id="migrationLog">
+                <h3>📝 Registro de Migración</h3>
+                <div id="migrationSteps" class="steps-list">
+                    <p class="text-muted">Presiona "Ejecutar Migración" para comenzar</p>
+                </div>
+            </div>
+
+            <!-- Mapping Reference -->
+            <div class="mapping-reference">
+                <h3>📐 Mapeo de Tablas → Colecciones</h3>
+                <table class="mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Dominio</th>
+                            <th>Tablas SQL Server</th>
+                            <th>→</th>
+                            <th>Colecciones MongoDB</th>
+                            <th>Patrón</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Productos</strong></td>
+                            <td>Product, ProductCategory, ProductModel, ProductDescription</td>
+                            <td>→</td>
+                            <td>products, product_categories</td>
+                            <td><span class="pattern-badge embed">Embedding</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Clientes</strong></td>
+                            <td>Customer, CustomerAddress, Address</td>
+                            <td>→</td>
+                            <td>customers, addresses</td>
+                            <td><span class="pattern-badge hybrid">Embed + Ref</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Ventas</strong></td>
+                            <td>SalesOrderHeader, SalesOrderDetail</td>
+                            <td>→</td>
+                            <td>sales_orders</td>
+                            <td><span class="pattern-badge denorm">Embed + Denorm</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== MONGODB TAB ==================== -->
+        <section class="tab-content" id="content-mongo">
+            <div class="section-header">
+                <h2>🍃 MongoDB - adventureworks_nosql</h2>
+                <p>Explorador de la base de datos NoSQL</p>
+            </div>
+
+            <div class="sql-explorer">
+                <!-- Collection list -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Colecciones</h3>
+                        <button class="btn btn-sm" onclick="loadMongoCollections()" id="btn-refresh-mongo">Actualizar</button>
+                    </div>
+                    <div id="mongoCollectionList" class="table-list">
+                        <div class="loading">Cargando colecciones...</div>
+                    </div>
+                </div>
+
+                <!-- Document view -->
+                <div class="panel panel-wide">
+                    <div class="panel-header">
+                        <h3 id="mongoCollTitle">Selecciona una colección</h3>
+                        <div class="panel-actions">
+                            <span id="mongoDocCount" class="row-count"></span>
+                            <button class="btn btn-sm" id="mongoViewToggle" onclick="toggleMongoView()" style="display:none;">
+                                Vista: Tabla
+                            </button>
+                        </div>
+                    </div>
+                    <div id="mongoCollData" class="data-view">
+                        <div class="placeholder">
+                            <span class="placeholder-icon">👈</span>
+                            <p>Selecciona una colección para ver sus documentos</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MongoDB Query -->
+            <div class="query-section">
+                <h3>🔍 Consulta MongoDB</h3>
+                <div class="mongo-query-group">
+                    <div class="query-field">
+                        <label>Colección:</label>
+                        <select id="mongoQueryCollection">
+                            <option value="">Seleccionar...</option>
+                        </select>
+                    </div>
+                    <div class="query-field">
+                        <label>Filtro JSON:</label>
+                        <textarea id="mongoQueryFilter" placeholder='{"ListPrice": {"$gt": 1000}}' rows="2"></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="executeMongoQuery()" id="btn-exec-mongo">Ejecutar</button>
+                </div>
+                <div id="mongoQueryResult" class="query-result"></div>
+            </div>
+        </section>
+
+        <!-- ==================== COMPARISON TAB ==================== -->
+        <section class="tab-content" id="content-compare">
+            <div class="section-header">
+                <h2>⚖️ Comparación SQL vs MongoDB</h2>
+                <p>Validación de integridad de datos post-migración</p>
+            </div>
+
+            <!-- Summary Comparison -->
+            <div class="compare-section">
+                <div class="compare-header">
+                    <h3>📊 Resumen de Conteo</h3>
+                    <button class="btn btn-primary" onclick="loadComparisonSummary()" id="btn-compare-summary">Comparar</button>
+                </div>
+                <div id="compareSummary" class="compare-result">
+                    <p class="text-muted">Presiona "Comparar" para verificar la integridad de los datos</p>
+                </div>
+            </div>
+
+            <!-- Query Comparisons -->
+            <div class="compare-queries">
+                <h3>🔍 Consultas Equivalentes</h3>
+                <p class="text-muted">Ejecuta la misma consulta en ambas bases de datos y compara resultados</p>
+                
+                <div class="compare-buttons">
+                    <button class="btn btn-outline" onclick="loadComparison('products')" id="btn-cmp-products">
+                        📦 Top 10 Productos Caros
+                    </button>
+                    <button class="btn btn-outline" onclick="loadComparison('customers')" id="btn-cmp-customers">
+                        👥 Clientes con Más Direcciones
+                    </button>
+                    <button class="btn btn-outline" onclick="loadComparison('sales')" id="btn-cmp-sales">
+                        💰 Ventas por Cliente
+                    </button>
+                    <button class="btn btn-outline" onclick="loadComparison('orders-detail')" id="btn-cmp-orders">
+                        📋 Detalle de Orden
+                    </button>
+                    <button class="btn btn-outline" onclick="loadComparison('product-by-category')" id="btn-cmp-categories">
+                        📂 Productos por Categoría
+                    </button>
+                </div>
+
+                <div id="compareResults" class="compare-detail-result"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>Taller Práctico: De Monolito a MongoDB Distribuido | Bases de Datos Masivas</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
