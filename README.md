@@ -445,10 +445,5 @@ docker exec -it mongos1 mongosh --eval "sh.status()"
 
 ## 👥 Autores
 
-- **[Tu nombre]** — Bases de Datos Masivas, Séptimo Semestre
+- Daniel García, Nicolas Gutierrez, Brayan Guerrero — Bases de Datos Masivas, Séptimo Semestre
 
----
-
-## 📄 Licencia
-
-Proyecto académico. Base de datos AdventureWorks es propiedad de Microsoft y se usa bajo su licencia de ejemplo.
