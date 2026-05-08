@@ -1,44 +1,47 @@
-# 🔄 Migración de Monolito Relacional a MongoDB Distribuido
+# Migración de Monolito Relacional a MongoDB Distribuido
 
-> **Taller Práctico** — Bases de Datos Masivas | Séptimo Semestre
+**Taller Práctico** — Bases de Datos Masivas | Séptimo Semestre
 
-Proyecto que demuestra la migración incremental de una base de datos monolítica relacional (SQL Server – AdventureWorksLT) hacia una arquitectura NoSQL con MongoDB, aplicando patrones de Domain-Driven Design (DDD), estrategias de embedding/referencing y validación de integridad post-migración.
-
----
-
-## 📋 Tabla de Contenidos
-
-- [Arquitectura](#-arquitectura)
-- [Tecnologías](#-tecnologías)
-- [Prerrequisitos](#-prerrequisitos)
-- [Instalación y Ejecución](#-instalación-y-ejecución)
-- [Uso del Dashboard](#-uso-del-dashboard)
-- [Estrategia de Migración](#-estrategia-de-migración)
-- [API Reference](#-api-reference)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Validación de Integridad](#-validación-de-integridad)
-- [Credenciales](#-credenciales)
-- [Troubleshooting](#-troubleshooting)
-- [Autores](#-autores)
+Proyecto que implementa la migración de una base de datos monolítica relacional (SQL Server – AdventureWorksLT) hacia MongoDB, aplicando Domain-Driven Design, patrones de embedding/referencing, patrón Saga con rollback, y despliegue de cluster con réplicas y sharding.
 
 ---
 
-## 🏗 Arquitectura
+## Tabla de Contenidos
+
+- [Arquitectura](#arquitectura)
+- [Tecnologías](#tecnologías)
+- [Prerrequisitos](#prerrequisitos)
+- [Instalación y Ejecución](#instalación-y-ejecución)
+- [Uso del Dashboard](#uso-del-dashboard)
+- [Estrategia de Migración (DDD)](#estrategia-de-migración-ddd)
+- [Patrón Saga y Rollback](#patrón-saga-y-rollback)
+- [Cluster MongoDB (Réplicas + Sharding)](#cluster-mongodb-réplicas--sharding)
+- [API Reference](#api-reference)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Validación de Integridad](#validación-de-integridad)
+- [Documentación Complementaria](#documentación-complementaria)
+- [Credenciales](#credenciales)
+- [Troubleshooting](#troubleshooting)
+- [Autores](#autores)
+
+---
+
+## Arquitectura
 
 El sistema se compone de **3 contenedores Docker** orquestados con Docker Compose:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Docker Network                        │
-│                  (migration_network)                     │
+│                    Docker Network                       │
+│                  (migration_network)                    │
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
 │  │  SQL Server   │  │    Core      │  │   MongoDB    │  │
 │  │  (Fuente)     │◄─┤  (FastAPI)   ├─►│  (Destino)   │  │
 │  │              │  │              │  │              │  │
 │  │ AdventureWorks│  │ Pandas ETL   │  │ adventureworks│  │
-│  │ LT2022       │  │ Dashboard    │  │ _nosql       │  │
-│  │              │  │              │  │              │  │
+│  │ LT2022       │  │ Saga Engine  │  │ _nosql       │  │
+│  │              │  │ Dashboard    │  │              │  │
 │  │ Puerto: 1433  │  │ Puerto: 8000 │  │ Puerto: 27017│  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -52,7 +55,7 @@ El sistema se compone de **3 contenedores Docker** orquestados con Docker Compos
 
 ---
 
-## 🛠 Tecnologías
+## Tecnologías
 
 | Componente | Tecnología | Versión |
 |-----------|------------|---------|
@@ -67,22 +70,22 @@ El sistema se compone de **3 contenedores Docker** orquestados con Docker Compos
 
 ---
 
-## ✅ Prerrequisitos
+## Prerrequisitos
 
 1. **Docker Desktop** instalado y en ejecución
-   - [Descargar Docker Desktop para Windows](https://www.docker.com/products/docker-desktop/)
 2. Al menos **4 GB de RAM** disponibles para Docker
 3. Puertos **1433**, **8000** y **27017** libres
+4. Conexión a internet (primera ejecución)
 
 ---
 
-## 🚀 Instalación y Ejecución
+## Instalación y Ejecución
 
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <URL_DEL_REPOSITORIO>
-cd Migracion_nosql
+git clone https://github.com/DaniiFG/migracion-nosql.git
+cd migracion-nosql
 ```
 
 ### 2. Construir y levantar los contenedores
@@ -91,9 +94,9 @@ cd Migracion_nosql
 docker-compose up --build -d
 ```
 
-> ⏱ **Primera ejecución:** tarda ~5-10 minutos (descarga imágenes + restaura BD).
+> La primera ejecución tarda ~5-10 minutos (descarga de imágenes y restauración de la BD).
 
-### 3. Verificar que todo esté corriendo
+### 3. Verificar estado
 
 ```bash
 docker-compose ps
@@ -107,101 +110,65 @@ Los 3 contenedores deben mostrar estado `Up (healthy)`.
 docker-compose logs sqlserver
 ```
 
-Buscar el mensaje: `Base de datos restaurada exitosamente!`
+Esperar el mensaje: `Base de datos restaurada exitosamente!`
 
-### 5. Abrir el Dashboard
+### 5. Acceder al Dashboard
 
-Navegar a: **http://localhost:8000**
+Abrir en el navegador: **http://localhost:8000**
 
 ### 6. Ejecutar la migración
 
-En la pestaña **"🔄 Migración"** del dashboard, hacer click en **"🚀 Ejecutar Migración Completa"**.
+En la pestaña **Migración** del dashboard, presionar **Ejecutar Migración Completa**.
 
-### 7. Verificar integridad
+### 7. Validar integridad
 
-En la pestaña **"⚖️ Comparación"**, hacer click en **"Comparar"** para validar conteos y ejecutar consultas equivalentes.
+En la pestaña **Comparación**, presionar **Comparar** para verificar conteos y ejecutar consultas equivalentes.
 
 ---
 
-## 🖥 Uso del Dashboard
+## Uso del Dashboard
 
 | Pestaña | Funcionalidad |
 |---------|---------------|
-| 📊 **Resumen** | Arquitectura, estrategia DDD, mapeo de dominios |
-| 🗄️ **SQL Server** | Explorar tablas, ver datos, ejecutar queries SELECT |
-| 🔄 **Migración** | Ejecutar/resetear migración, ver progreso y logs |
-| 🍃 **MongoDB** | Explorar colecciones, vista tabla/JSON, queries con filtros |
-| ⚖️ **Comparación** | Validar integridad: conteos + 5 consultas equivalentes lado a lado |
+| **Resumen** | Arquitectura, estrategia DDD, mapeo de dominios |
+| **SQL Server** | Explorar tablas, ver datos, ejecutar queries SELECT |
+| **Migración** | Ejecutar/resetear migración con Saga, ver progreso y logs de rollback |
+| **MongoDB** | Explorar colecciones en vista tabla o JSON, consultas con filtros |
+| **Comparación** | Validar integridad: conteos y 5 consultas equivalentes lado a lado |
+
+Documentación interactiva (Swagger): **http://localhost:8000/docs**
 
 ---
 
-## 📐 Estrategia de Migración
+## Estrategia de Migración (DDD)
 
-### Análisis de Dominios (DDD)
+La base de datos se descompone en 3 bounded contexts:
 
-La base de datos AdventureWorksLT se descompone en **3 bounded contexts**:
+### Dominio: Catálogo de Productos
 
-#### 1. Dominio: Catálogo de Productos
+| Tablas SQL (5) | Colecciones MongoDB (2) | Patrón |
+|---------------|------------------------|--------|
+| Product, ProductCategory, ProductModel, ProductModelProductDescription, ProductDescription | `products`, `product_categories` | Embedding |
 
-| Tablas SQL (5) | → | Colecciones MongoDB (2) | Patrón |
-|---------------|---|------------------------|--------|
-| `SalesLT.Product` | → | `products` | Embedding |
-| `SalesLT.ProductCategory` | → | `product_categories` | Directo |
-| `SalesLT.ProductModel` | → | (embebido en `products`) | Embedding |
-| `SalesLT.ProductModelProductDescription` | → | (embebido en `products`) | Embedding |
-| `SalesLT.ProductDescription` | → | (embebido en `products`) | Embedding |
+Categoría, modelo y descripciones se incrustan como subdocumentos dentro del producto.
 
-**Justificación:** Categoría, modelo y descripciones se consultan siempre junto con el producto. Incrustarlos elimina JOINs y optimiza lecturas de catálogo.
+### Dominio: Clientes
 
-```json
-// Documento en products
-{
-  "ProductID": 680,
-  "ProductName": "HL Road Frame - Black, 58",
-  "ListPrice": 1431.50,
-  "category": {
-    "id": 18,
-    "name": "Road Frames",
-    "parent_name": "Components"
-  },
-  "model": {
-    "id": 6,
-    "name": "HL Road Frame",
-    "descriptions": [
-      { "Culture": "en", "Description": "Our lightest and best quality..." }
-    ]
-  }
-}
-```
+| Tablas SQL (3) | Colecciones MongoDB (2) | Patrón |
+|---------------|------------------------|--------|
+| Customer, CustomerAddress, Address | `customers`, `addresses` | Embedding + Referencing |
 
-#### 2. Dominio: Clientes
+Direcciones embebidas en el cliente para acceso rápido; colección independiente para consultas geográficas.
 
-| Tablas SQL (3) | → | Colecciones MongoDB (2) | Patrón |
-|---------------|---|------------------------|--------|
-| `SalesLT.Customer` | → | `customers` | Embedding + Ref |
-| `SalesLT.CustomerAddress` | → | (embebido en `customers`) | Embedding |
-| `SalesLT.Address` | → | `addresses` | Referencing |
+### Dominio: Ventas
 
-**Justificación:** Las direcciones se incrustan en el cliente (acceso rápido) Y se mantienen como colección independiente para consultas geográficas.
+| Tablas SQL (2) | Colecciones MongoDB (1) | Patrón |
+|---------------|------------------------|--------|
+| SalesOrderHeader, SalesOrderDetail | `sales_orders` | Embedding + Denormalization |
 
-#### 3. Dominio: Ventas
+Detalles de orden embebidos. Nombre de cliente y producto denormalizados para evitar lookups.
 
-| Tablas SQL (2) | → | Colecciones MongoDB (1) | Patrón |
-|---------------|---|------------------------|--------|
-| `SalesLT.SalesOrderHeader` | → | `sales_orders` | Embedding + Denorm |
-| `SalesLT.SalesOrderDetail` | → | (embebido en `sales_orders`) | Embedding |
-
-**Justificación:** Una orden siempre se lee con sus detalles. Se denormalizan nombre de cliente y producto para evitar lookups.
-
-### Patrones Aplicados
-
-| Patrón | Descripción | Ejemplo |
-|--------|-------------|---------|
-| **Embedding** | Datos 1:N como subdocumentos | Detalles de orden dentro de la orden |
-| **Referencing** | IDs como referencia entre colecciones | `addresses` como colección separada |
-| **Denormalization** | Copiar campos frecuentes | Nombre del cliente en `sales_orders` |
-
-### Índices Creados
+### Índices
 
 ```javascript
 // Productos
@@ -221,7 +188,85 @@ db.sales_orders.createIndex({ "OrderDate": 1 })
 
 ---
 
-## 📡 API Reference
+## Patrón Saga y Rollback
+
+La migración implementa el **patrón Saga de Orquestación** con FastAPI como coordinador central.
+
+### Flujo de la Saga
+
+```
+Paso 1 → Migrar categorías      → Registrar acción compensatoria
+Paso 2 → Migrar productos       → Registrar acción compensatoria
+Paso 3 → Migrar clientes        → Registrar acción compensatoria
+Paso 4 → Migrar direcciones     → Registrar acción compensatoria
+Paso 5 → Migrar órdenes         → Registrar acción compensatoria
+Paso 6 → Crear índices          → Registrar acción compensatoria
+```
+
+Si cualquier paso falla, se ejecutan las compensaciones en **orden inverso**, eliminando las colecciones ya creadas y dejando MongoDB en estado consistente.
+
+### Estrategias de Rollback
+
+| Estrategia | Descripción |
+|-----------|-------------|
+| Compensación automática | La Saga deshace pasos previos si uno falla |
+| Reset manual | Endpoint `POST /api/migration/reset` elimina todas las colecciones |
+| Visibilidad | Dashboard muestra Saga Log y Rollback Log en tiempo real |
+
+### Endpoints de Saga
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/api/migration/execute` | POST | Ejecutar migración con Saga |
+| `/api/migration/saga-log` | GET | Log detallado de pasos y rollbacks |
+| `/api/migration/status` | GET | Estado actual de la migración |
+| `/api/migration/reset` | POST | Reset completo de MongoDB |
+
+---
+
+## Cluster MongoDB (Réplicas + Sharding)
+
+El archivo `docker-compose.cluster.yml` despliega un entorno de producción simulado.
+
+### Componentes
+
+| Componente | Nodos | Puerto | Función |
+|-----------|-------|--------|---------|
+| Config Server | 1 (replica set) | 27019 | Metadata del cluster |
+| Shard 1 | 3 (primary + 2 secondary) | 27018 | Almacenamiento con replicación |
+| Mongos Router | 1 | 27017 | Punto de entrada al cluster |
+
+### Ejecución del Cluster
+
+```bash
+# Detener entorno de desarrollo
+docker-compose down
+
+# Levantar cluster de producción
+docker-compose -f docker-compose.cluster.yml up --build -d
+
+# Verificar inicialización
+docker logs cluster_init
+
+# Dashboard disponible en http://localhost:8000
+```
+
+### Shard Keys
+
+| Colección | Shard Key | Justificación |
+|-----------|-----------|---------------|
+| `sales_orders` | `customer.id` | Distribución uniforme de órdenes por cliente |
+| `customers` | `CustomerID` | Distribución uniforme de clientes |
+
+### Verificar estado del cluster
+
+```bash
+docker exec -it mongos1 mongosh --eval "sh.status()"
+```
+
+---
+
+## API Reference
 
 Base URL: `http://localhost:8000`
 
@@ -229,9 +274,9 @@ Base URL: `http://localhost:8000`
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/sql/tables` | Lista todas las tablas con conteo |
-| GET | `/api/sql/table/{schema}/{table}?limit=50` | Datos de una tabla |
-| GET | `/api/sql/schema/{schema}/{table}` | Esquema y FK de una tabla |
+| GET | `/api/sql/tables` | Lista tablas con conteo |
+| GET | `/api/sql/table/{schema}/{table}` | Datos de una tabla |
+| GET | `/api/sql/schema/{schema}/{table}` | Esquema y FK |
 | GET | `/api/sql/query?q=SELECT...` | Ejecutar consulta SELECT |
 | GET | `/api/sql/relationships` | Todas las FK de la BD |
 
@@ -240,7 +285,7 @@ Base URL: `http://localhost:8000`
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | GET | `/api/mongo/collections` | Lista colecciones con conteo |
-| GET | `/api/mongo/collection/{name}?limit=50` | Documentos de una colección |
+| GET | `/api/mongo/collection/{name}` | Documentos de una colección |
 | GET | `/api/mongo/collection/{name}/schema` | Esquema inferido |
 | GET | `/api/mongo/query?collection=...&filter_json={}` | Consulta con filtro |
 
@@ -248,10 +293,11 @@ Base URL: `http://localhost:8000`
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| POST | `/api/migration/execute` | Ejecutar migración completa |
+| POST | `/api/migration/execute` | Ejecutar migración (Saga) |
 | POST | `/api/migration/reset` | Limpiar MongoDB |
 | GET | `/api/migration/status` | Estado de la migración |
-| GET | `/api/migration/mapping` | Mapeo de tablas → colecciones |
+| GET | `/api/migration/saga-log` | Log de la Saga |
+| GET | `/api/migration/mapping` | Mapeo de tablas a colecciones |
 
 ### Comparación
 
@@ -264,63 +310,69 @@ Base URL: `http://localhost:8000`
 | GET | `/api/compare/orders-detail` | Detalle de una orden |
 | GET | `/api/compare/product-by-category` | Productos por categoría |
 
-### Documentación interactiva (Swagger)
-
-Disponible en: **http://localhost:8000/docs**
-
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 Migracion_nosql/
-├── docker-compose.yml              # Orquestación de servicios
-├── .env.example                    # Variables de entorno de ejemplo
-├── .gitignore
-├── README.md                       # Esta documentación
+├── docker-compose.yml              # Orquestación (desarrollo)
+├── docker-compose.cluster.yml      # Orquestación (cluster producción)
+├── .env.example                    # Variables de entorno
+├── BLUEPRINT_MIGRACION.md          # Blueprint de migración validado
+├── HOJA_DE_RUTA.md                 # Hoja de ruta técnica
+├── README.md
 │
-├── sqlserver/                      # Contenedor 1: SQL Server
-│   ├── Dockerfile                  # Imagen con AdventureWorksLT
-│   ├── setup.sh                    # Script de inicio + restauración
-│   └── restore-db.sql              # Comando RESTORE DATABASE
+├── sqlserver/
+│   ├── Dockerfile                  # SQL Server + AdventureWorksLT
+│   ├── setup.sh                    # Inicio + restauración automática
+│   └── restore-db.sql              # RESTORE DATABASE
 │
-└── core/                           # Contenedor 2: FastAPI Core
-    ├── Dockerfile                  # Python 3.11 + ODBC drivers
-    ├── requirements.txt            # Dependencias Python
+└── core/
+    ├── Dockerfile                  # Python 3.11 + ODBC
+    ├── requirements.txt
     └── app/
-        ├── __init__.py
-        ├── main.py                 # Punto de entrada FastAPI
+        ├── main.py                 # FastAPI app
         ├── database.py             # Conexiones SQL Server + MongoDB
         ├── routers/
-        │   ├── __init__.py
         │   ├── sql_router.py       # Endpoints SQL Server
         │   ├── mongo_router.py     # Endpoints MongoDB
-        │   ├── migration_router.py # Lógica de migración (Pandas)
+        │   ├── migration_router.py # Saga + transformación Pandas
         │   └── compare_router.py   # Validación de integridad
         ├── templates/
-        │   └── dashboard.html      # Dashboard web
+        │   └── dashboard.html
         └── static/
-            ├── styles.css          # Estilos del dashboard
-            └── app.js              # Lógica frontend
+            ├── styles.css
+            └── app.js
 ```
 
 ---
 
-## ✔️ Validación de Integridad
+## Validación de Integridad
 
-Después de la migración, el sistema valida:
+Después de la migración, el sistema ejecuta las siguientes validaciones:
 
-1. **Conteo de registros:** cada tabla SQL debe tener el mismo número de documentos en MongoDB
-2. **Consultas equivalentes:** 5 consultas se ejecutan en ambas bases y se comparan resultados:
-   - Top 10 productos más caros (con categoría)
-   - Clientes con más direcciones
-   - Total de ventas por cliente
-   - Detalle completo de una orden
-   - Productos agrupados por categoría (con estadísticas de precio)
+| Validación | Método |
+|-----------|--------|
+| Conteo por entidad | `COUNT(*)` SQL vs `countDocuments()` MongoDB |
+| Top 10 productos caros | Query equivalente en ambas bases |
+| Clientes con direcciones | JOIN SQL vs subdocumento MongoDB |
+| Ventas por cliente | `GROUP BY` SQL vs `$group` MongoDB |
+| Detalle de orden | JOIN SQL vs documento embebido |
+| Productos por categoría | Agregación en ambas bases |
 
 ---
 
-## 🔐 Credenciales
+## Documentación Complementaria
+
+| Documento | Descripción |
+|----------|-------------|
+| `BLUEPRINT_MIGRACION.md` | Análisis relacional, bounded contexts, modelo MongoDB, indexación y patrones |
+| `HOJA_DE_RUTA.md` | Plan de ejecución en 6 fases con gates de salida y checklist |
+
+---
+
+## Credenciales
 
 | Servicio | Usuario | Contraseña |
 |----------|---------|------------|
@@ -329,13 +381,13 @@ Después de la migración, el sistema valida:
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 | Problema | Solución |
 |----------|---------|
-| SQL Server no inicia | Verificar que Docker tiene ≥4 GB RAM asignados |
-| "Login failed for user 'sa'" | Esperar ~30s más y reintentar; SQL Server aún está iniciando |
-| Puerto 1433 ocupado | Cerrar SQL Server local o cambiar puerto en `docker-compose.yml` |
+| SQL Server no inicia | Verificar que Docker tiene al menos 4 GB de RAM |
+| Login failed for user 'sa' | Esperar ~30s; SQL Server aún está iniciando |
+| Puerto 1433 ocupado | Cerrar SQL Server local o cambiar puerto en docker-compose.yml |
 | Migración falla | Verificar que SQL Server muestra `healthy` con `docker-compose ps` |
 | Dashboard no carga | Verificar que el contenedor `core_migration` está corriendo |
 
@@ -345,105 +397,22 @@ Después de la migración, el sistema valida:
 # Ver logs en tiempo real
 docker-compose logs -f
 
-# Reiniciar un servicio específico
+# Reiniciar un servicio
 docker-compose restart core
 
-# Reconstruir todo desde cero
-docker-compose down -v && docker-compose up --build -d
+# Reconstruir desde cero
+docker-compose down -v
+docker-compose up --build -d
 
-# Conectarse a SQL Server desde el contenedor
+# Conectarse a SQL Server
 docker exec -it sqlserver_adventureworks /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "AdventureWorks2024!" -C
 
-# Conectarse a MongoDB desde el contenedor
+# Conectarse a MongoDB
 docker exec -it mongodb_target mongosh -u admin -p "MongoAdmin2024!"
 ```
 
 ---
 
-## 🔄 Patrón Saga (Transacciones Distribuidas)
-
-La migración implementa el **patrón Saga de Orquestación** donde FastAPI actúa como coordinador central:
-
-```
-Saga Paso 1 → Categorías     ✅ → Registrar acción compensatoria
-Saga Paso 2 → Productos      ✅ → Registrar acción compensatoria
-Saga Paso 3 → Clientes       ❌ → FALLO!
-                                  ↩️ Rollback: Eliminar Productos
-                                  ↩️ Rollback: Eliminar Categorías
-                                  ✅ MongoDB en estado consistente
-```
-
-- Cada paso es una **transacción local** en MongoDB
-- Si un paso falla, se ejecutan **acciones compensatorias** en orden inverso
-- El `SagaOrchestrator` registra cada paso y su colección asociada
-- El dashboard muestra el **Saga Log** con todos los pasos y rollbacks
-
-### Endpoints de Saga
-
-| Endpoint | Descripción |
-|----------|-------------|
-| `POST /api/migration/execute` | Ejecuta migración con Saga |
-| `GET /api/migration/saga-log` | Log detallado de la Saga |
-| `POST /api/migration/reset` | Reset completo (rollback manual) |
-
----
-
-## 🏗️ Cluster MongoDB (Réplicas + Sharding)
-
-El archivo `docker-compose.cluster.yml` despliega un **entorno de producción simulado**:
-
-```
-┌──────────────────────────────────────────────────┐
-│            Mongos Router (:27017)                │
-│         Punto de entrada al cluster              │
-└─────────────────────┬────────────────────────────┘
-                      │
-         ┌────────────┼────────────────┐
-         │      Config Server RS       │
-         │      configsvr1:27019       │
-         └────────────┼────────────────┘
-                      │
-    ┌─────────────────┼─────────────────┐
-    │          Shard 1 Replica Set      │
-    │  ┌──────────┬──────────┬────────┐ │
-    │  │ Primary  │Secondary1│Secondary2│
-    │  │  :27018  │  :27018  │ :27018 │ │
-    │  └──────────┴──────────┴────────┘ │
-    └───────────────────────────────────┘
-```
-
-### Ejecutar el cluster
-
-```bash
-# Detener el entorno de desarrollo si está corriendo
-docker-compose down
-
-# Levantar el cluster de producción
-docker-compose -f docker-compose.cluster.yml up --build -d
-
-# Verificar que el cluster se inicializó
-docker logs cluster_init
-
-# Abrir dashboard
-# http://localhost:8000
-```
-
-### Shard Keys configuradas
-
-| Colección | Shard Key | Justificación |
-|-----------|-----------|---------------|
-| `sales_orders` | `customer.id` | Distribuye órdenes por cliente |
-| `customers` | `CustomerID` | Distribuye clientes uniformemente |
-
-### Verificar sharding
-
-```bash
-docker exec -it mongos1 mongosh --eval "sh.status()"
-```
-
----
-
-## 👥 Autores
+## Autores
 
 - Daniel García, Nicolas Gutierrez, Brayan Guerrero — Bases de Datos Masivas, Séptimo Semestre
-
