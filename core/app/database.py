@@ -22,13 +22,17 @@ def get_sql_connection():
 
 
 def get_mongo_client():
-    """Obtiene cliente MongoDB."""
+    """Obtiene cliente MongoDB. Soporta modo standalone (con auth) y cluster (sin auth)."""
     host = os.getenv('MONGO_HOST', 'mongodb')
     port = os.getenv('MONGO_PORT', '27017')
     user = os.getenv('MONGO_USER', 'admin')
     password = os.getenv('MONGO_PASSWORD', 'MongoAdmin2024!')
     
-    uri = f"mongodb://{user}:{password}@{host}:{port}/?authSource=admin"
+    # Si no hay usuario/password, conectar sin autenticación (modo cluster)
+    if user and password:
+        uri = f"mongodb://{user}:{password}@{host}:{port}/?authSource=admin"
+    else:
+        uri = f"mongodb://{host}:{port}/"
     return MongoClient(uri)
 
 

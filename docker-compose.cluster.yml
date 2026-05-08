@@ -1,0 +1,225 @@
+# ============================================================
+# Docker Compose - Entorno de Producción Simulado
+# MongoDB Replica Set (3 nodos) + Sharding + SQL Server + Core
+# ============================================================
+# Uso: docker-compose -f docker-compose.cluster.yml up --build -d
+# Post-setup: docker exec mongos1 mongosh --eval "$(cat mongo-cluster/init-cluster.js)"
+
+version: '3.8'
+
+services:
+  # ============================================
+  # SQL Server (fuente relacional)
+  # ============================================
+  sqlserver:
+    build:
+      context: ./sqlserver
+      dockerfile: Dockerfile
+    container_name: sqlserver_adventureworks
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=AdventureWorks2024!
+      - MSSQL_PID=Express
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - cluster_network
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "AdventureWorks2024!" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ============================================
+  # Config Server Replica Set (1 nodo para lab)
+  # ============================================
+  configsvr1:
+    image: mongo:7.0
+    container_name: configsvr1
+    command: mongod --configsvr --replSet configRS --port 27019 --bind_ip_all
+    volumes:
+      - configsvr1_data:/data/db
+    networks:
+      - cluster_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --port 27019 --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Shard 1 Replica Set (3 nodos = alta disponibilidad)
+  # ============================================
+  shard1-primary:
+    image: mongo:7.0
+    container_name: shard1-primary
+    command: mongod --shardsvr --replSet shard1RS --port 27018 --bind_ip_all
+    volumes:
+      - shard1_primary_data:/data/db
+    networks:
+      - cluster_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --port 27018 --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  shard1-secondary1:
+    image: mongo:7.0
+    container_name: shard1-secondary1
+    command: mongod --shardsvr --replSet shard1RS --port 27018 --bind_ip_all
+    volumes:
+      - shard1_sec1_data:/data/db
+    networks:
+      - cluster_network
+
+  shard1-secondary2:
+    image: mongo:7.0
+    container_name: shard1-secondary2
+    command: mongod --shardsvr --replSet shard1RS --port 27018 --bind_ip_all
+    volumes:
+      - shard1_sec2_data:/data/db
+    networks:
+      - cluster_network
+
+  # ============================================
+  # Mongos Router (punto de entrada al cluster)
+  # ============================================
+  mongos1:
+    image: mongo:7.0
+    container_name: mongos1
+    command: mongos --configdb configRS/configsvr1:27019 --port 27017 --bind_ip_all
+    ports:
+      - "27017:27017"
+    depends_on:
+      configsvr1:
+        condition: service_healthy
+      shard1-primary:
+        condition: service_healthy
+    networks:
+      - cluster_network
+
+  # ============================================
+  # Inicializador del cluster (se ejecuta una vez)
+  # ============================================
+  cluster-init:
+    image: mongo:7.0
+    container_name: cluster_init
+    depends_on:
+      configsvr1:
+        condition: service_healthy
+      shard1-primary:
+        condition: service_healthy
+    networks:
+      - cluster_network
+    restart: "no"
+    entrypoint: >
+      bash -c "
+        echo 'Esperando a que los nodos estén listos...'
+        sleep 10
+
+        echo '>>> Inicializando Config Server Replica Set...'
+        mongosh --host configsvr1 --port 27019 --eval '
+          rs.initiate({
+            _id: \"configRS\",
+            configsvr: true,
+            members: [{ _id: 0, host: \"configsvr1:27019\" }]
+          })
+        '
+        sleep 5
+
+        echo '>>> Inicializando Shard 1 Replica Set (3 nodos)...'
+        mongosh --host shard1-primary --port 27018 --eval '
+          rs.initiate({
+            _id: \"shard1RS\",
+            members: [
+              { _id: 0, host: \"shard1-primary:27018\", priority: 2 },
+              { _id: 1, host: \"shard1-secondary1:27018\", priority: 1 },
+              { _id: 2, host: \"shard1-secondary2:27018\", priority: 1 }
+            ]
+          })
+        '
+        sleep 10
+
+        echo '>>> Agregando shard al cluster via mongos...'
+        mongosh --host mongos1 --port 27017 --eval '
+          sh.addShard(\"shard1RS/shard1-primary:27018,shard1-secondary1:27018,shard1-secondary2:27018\")
+        '
+        sleep 3
+
+        echo '>>> Habilitando sharding en la base de datos...'
+        mongosh --host mongos1 --port 27017 --eval '
+          sh.enableSharding(\"adventureworks_nosql\")
+        '
+        sleep 2
+
+        echo '>>> Configurando shard key en sales_orders (por customer.id)...'
+        mongosh --host mongos1 --port 27017 --eval '
+          db = db.getSiblingDB(\"adventureworks_nosql\");
+          db.createCollection(\"sales_orders\");
+          db.sales_orders.createIndex({ \"customer.id\": 1 });
+          sh.shardCollection(\"adventureworks_nosql.sales_orders\", { \"customer.id\": 1 });
+        '
+
+        echo '>>> Configurando shard key en customers (por CustomerID)...'
+        mongosh --host mongos1 --port 27017 --eval '
+          db = db.getSiblingDB(\"adventureworks_nosql\");
+          db.createCollection(\"customers\");
+          db.customers.createIndex({ \"CustomerID\": 1 });
+          sh.shardCollection(\"adventureworks_nosql.customers\", { \"CustomerID\": 1 });
+        '
+
+        echo '============================================'
+        echo '✅ CLUSTER MONGODB CONFIGURADO EXITOSAMENTE'
+        echo '  - Config Server RS: configsvr1:27019'
+        echo '  - Shard 1 RS: shard1-primary:27018 (primary)'
+        echo '                shard1-secondary1:27018'
+        echo '                shard1-secondary2:27018'
+        echo '  - Mongos Router: mongos1:27017'
+        echo '  - Sharding habilitado en: adventureworks_nosql'
+        echo '  - Shard keys: sales_orders.customer.id, customers.CustomerID'
+        echo '============================================'
+      "
+
+  # ============================================
+  # Core (FastAPI) - se conecta al mongos router
+  # ============================================
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: core_migration
+    ports:
+      - "8000:8000"
+    environment:
+      - SQL_SERVER_HOST=sqlserver
+      - SQL_SERVER_PORT=1433
+      - SQL_SERVER_USER=sa
+      - SQL_SERVER_PASSWORD=AdventureWorks2024!
+      - SQL_SERVER_DB=AdventureWorksLT
+      - MONGO_HOST=mongos1
+      - MONGO_PORT=27017
+      - MONGO_USER=
+      - MONGO_PASSWORD=
+      - MONGO_DB=adventureworks_nosql
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - cluster_network
+
+volumes:
+  sqlserver_data:
+  configsvr1_data:
+  shard1_primary_data:
+  shard1_sec1_data:
+  shard1_sec2_data:
+
+networks:
+  cluster_network:
+    driver: bridge

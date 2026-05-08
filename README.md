@@ -360,6 +360,89 @@ docker exec -it mongodb_target mongosh -u admin -p "MongoAdmin2024!"
 
 ---
 
+## 🔄 Patrón Saga (Transacciones Distribuidas)
+
+La migración implementa el **patrón Saga de Orquestación** donde FastAPI actúa como coordinador central:
+
+```
+Saga Paso 1 → Categorías     ✅ → Registrar acción compensatoria
+Saga Paso 2 → Productos      ✅ → Registrar acción compensatoria
+Saga Paso 3 → Clientes       ❌ → FALLO!
+                                  ↩️ Rollback: Eliminar Productos
+                                  ↩️ Rollback: Eliminar Categorías
+                                  ✅ MongoDB en estado consistente
+```
+
+- Cada paso es una **transacción local** en MongoDB
+- Si un paso falla, se ejecutan **acciones compensatorias** en orden inverso
+- El `SagaOrchestrator` registra cada paso y su colección asociada
+- El dashboard muestra el **Saga Log** con todos los pasos y rollbacks
+
+### Endpoints de Saga
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /api/migration/execute` | Ejecuta migración con Saga |
+| `GET /api/migration/saga-log` | Log detallado de la Saga |
+| `POST /api/migration/reset` | Reset completo (rollback manual) |
+
+---
+
+## 🏗️ Cluster MongoDB (Réplicas + Sharding)
+
+El archivo `docker-compose.cluster.yml` despliega un **entorno de producción simulado**:
+
+```
+┌──────────────────────────────────────────────────┐
+│            Mongos Router (:27017)                │
+│         Punto de entrada al cluster              │
+└─────────────────────┬────────────────────────────┘
+                      │
+         ┌────────────┼────────────────┐
+         │      Config Server RS       │
+         │      configsvr1:27019       │
+         └────────────┼────────────────┘
+                      │
+    ┌─────────────────┼─────────────────┐
+    │          Shard 1 Replica Set      │
+    │  ┌──────────┬──────────┬────────┐ │
+    │  │ Primary  │Secondary1│Secondary2│
+    │  │  :27018  │  :27018  │ :27018 │ │
+    │  └──────────┴──────────┴────────┘ │
+    └───────────────────────────────────┘
+```
+
+### Ejecutar el cluster
+
+```bash
+# Detener el entorno de desarrollo si está corriendo
+docker-compose down
+
+# Levantar el cluster de producción
+docker-compose -f docker-compose.cluster.yml up --build -d
+
+# Verificar que el cluster se inicializó
+docker logs cluster_init
+
+# Abrir dashboard
+# http://localhost:8000
+```
+
+### Shard Keys configuradas
+
+| Colección | Shard Key | Justificación |
+|-----------|-----------|---------------|
+| `sales_orders` | `customer.id` | Distribuye órdenes por cliente |
+| `customers` | `CustomerID` | Distribuye clientes uniformemente |
+
+### Verificar sharding
+
+```bash
+docker exec -it mongos1 mongosh --eval "sh.status()"
+```
+
+---
+
 ## 👥 Autores
 
 - **[Tu nombre]** — Bases de Datos Masivas, Séptimo Semestre

@@ -163,22 +163,48 @@ async function executeMongoQuery() {
 
 // ============ MIGRATION ============
 async function executeMigration() {
-    if (!confirm('¿Ejecutar la migración completa de SQL Server a MongoDB?')) return;
+    if (!confirm('¿Ejecutar la migración completa (Saga) de SQL Server a MongoDB?')) return;
     const prog = document.getElementById('migrationProgress');
     prog.style.display = 'block';
-    document.getElementById('migrationSteps').innerHTML = '<div class="loading">Migrando datos...</div>';
+    document.getElementById('migrationSteps').innerHTML = '<div class="loading">Ejecutando Saga de migración...</div>';
     try {
         const res = await fetch('/api/migration/execute', { method: 'POST' });
         const data = await res.json();
-        if (!res.ok) { alert('Error: ' + (data.detail || 'Error desconocido')); return; }
+        if (!res.ok) {
+            // Mostrar rollback si hubo fallo
+            let errorHtml = `<div class="step-item error">❌ ${data.detail}</div>`;
+            if (data.status && data.status.rollback_log && data.status.rollback_log.length) {
+                errorHtml += '<h4 style="margin-top:12px;color:var(--accent-amber)">↩️ Rollback ejecutado:</h4>';
+                errorHtml += data.status.rollback_log.map(r => `<div class="step-item" style="color:var(--accent-amber)">${r}</div>`).join('');
+            }
+            document.getElementById('migrationSteps').innerHTML = errorHtml;
+            return;
+        }
         const st = data.status;
         document.getElementById('progressBar').style.width = st.progress + '%';
         document.getElementById('migrationPercent').textContent = st.progress + '%';
         document.getElementById('migrationStep').textContent = st.current_step;
-        document.getElementById('migrationSteps').innerHTML = st.steps_completed.map(s => `<div class="step-item">${s}</div>`).join('');
-        if (st.errors.length) {
-            document.getElementById('migrationSteps').innerHTML += st.errors.map(e => `<div class="step-item error">❌ ${e}</div>`).join('');
+        
+        // Mostrar pasos completados
+        let stepsHtml = st.steps_completed.map(s => `<div class="step-item">${s}</div>`).join('');
+        
+        // Mostrar Saga log
+        if (st.saga_log && st.saga_log.length) {
+            stepsHtml += '<h4 style="margin-top:16px;color:var(--accent-indigo)">📋 Saga Log (Orquestación):</h4>';
+            stepsHtml += st.saga_log.map(s => `<div class="step-item" style="color:var(--accent-cyan)">${s}</div>`).join('');
         }
+        
+        // Mostrar rollback si hubo
+        if (st.rollback_log && st.rollback_log.length) {
+            stepsHtml += '<h4 style="margin-top:12px;color:var(--accent-amber)">↩️ Rollback Log:</h4>';
+            stepsHtml += st.rollback_log.map(r => `<div class="step-item" style="color:var(--accent-amber)">${r}</div>`).join('');
+        }
+        
+        if (st.errors.length) {
+            stepsHtml += st.errors.map(e => `<div class="step-item error">❌ ${e}</div>`).join('');
+        }
+        
+        document.getElementById('migrationSteps').innerHTML = stepsHtml;
         loadMongoCollections();
         checkConnections();
     } catch (e) { alert('Error: ' + e.message); }
